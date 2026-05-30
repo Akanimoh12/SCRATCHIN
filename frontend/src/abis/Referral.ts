@@ -1,0 +1,56 @@
+export const REFERRAL_ABI = [
+  {
+    name: "referrerOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    name: "referralCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "pendingRewards",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "totalEarned",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "isHustler",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "referrer", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "getStats",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "referrer", type: "address" }],
+    outputs: [
+      { name: "count",    type: "uint256" },
+      { name: "pending",  type: "uint256" },
+      { name: "lifetime", type: "uint256" },
+      { name: "hustler",  type: "bool" },
+    ],
+  },
+  {
+    name: "claimRewards",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+] as const;
