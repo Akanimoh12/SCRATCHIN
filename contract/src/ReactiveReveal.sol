@@ -1,27 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-// SCRATCHIN' Reactive Network RSC.
+// SCRATCHIN' Reactive Network RSC — correct interface per reactive-lib v1.
 //
 // Deployment: Reactive Lasna testnet (chain ID 5318007).
-// Purpose:
-//   1. Subscribes to CardPurchased events on Unichain Sepolia (chain 1301).
-//   2. When react() is called by Reactive for a CardPurchased event,
-//      it emits a Callback event to trigger ScratchCard.revealCard() after revealDelay blocks.
-//
-// Reactive Network pattern:
-//   - The system contract handles subscriptions and cross-chain callbacks.
-//   - react() is called by Reactive VM when a subscribed event fires.
-//   - Emitting Callback(chainId, contract, payload) triggers a cross-chain call.
-//
-// Event: CardPurchased(address indexed buyer, uint256 indexed tokenId, uint256 indexed purchaseBlock)
-//   topic0 = keccak256("CardPurchased(address,uint256,uint256)")
+// Watches:    CardPurchased on ScratchCard (Unichain Sepolia, chain 1301).
+// Action:     Emits Callback to trigger ScratchCard.revealCard() after revealDelay blocks.
 
-// Reactive Network system contract address (same on all Reactive chains)
+// ─── Reactive Network interfaces (from reactive-lib) ──────────────────────────
+
 address constant REACTIVE_SYSTEM_CONTRACT = 0x0000000000000000000000000000000000fffFfF;
 
-// Unichain Sepolia chain ID
-uint256 constant UNICHAIN_SEPOLIA_CHAIN_ID = 1301;
+// REACTIVE_IGNORE: wildcard for topic filters — match any value
+uint256 constant REACTIVE_IGNORE = 0xa65f96fc951c35ead38878e0f0b7a3c744a6f5ccc1476b313353ce31712313ad;
 
 interface ISystemContract {
     function subscribe(
@@ -43,36 +34,63 @@ interface ISystemContract {
     ) external;
 }
 
-contract ReactiveReveal {
+// IReactive: the actual interface Reactive VM calls and the Callback event it watches.
+interface IReactive {
+    struct LogRecord {
+        uint256 chain_id;
+        address _contract;
+        uint256 topic_0;
+        uint256 topic_1;
+        uint256 topic_2;
+        uint256 topic_3;
+        bytes   data;
+        uint256 block_number;
+        uint256 op_code;
+        uint256 block_hash;
+        uint256 tx_hash;
+        uint256 log_index;
+    }
+
+    // Reactive Network watches for this exact event to deliver cross-chain callbacks.
+    // gas_limit: how much gas to forward on the destination chain call.
+    event Callback(
+        uint256 indexed chain_id,
+        address indexed _contract,
+        uint64  indexed gas_limit,
+        bytes   payload
+    );
+}
+
+// ─── ReactiveReveal ───────────────────────────────────────────────────────────
+
+contract ReactiveReveal is IReactive {
     // ─── Constants ────────────────────────────────────────────────────────────
 
-    /// @dev keccak256("CardPurchased(address,uint256,uint256)")
+    // keccak256("CardPurchased(address,uint256,uint256)")
     uint256 public constant CARD_PURCHASED_TOPIC0 =
         uint256(keccak256("CardPurchased(address,uint256,uint256)"));
 
-    /// Wildcard — match any value for indexed params
-    uint256 public constant REACTIVE_IGNORE = 0;
+    uint256 public constant UNICHAIN_SEPOLIA_CHAIN_ID = 1301;
+
+    // Gas to forward for revealCard() on Unichain. 200k is safe for the reveal logic.
+    uint64  public constant CALLBACK_GAS_LIMIT = 200_000;
 
     // ─── State ────────────────────────────────────────────────────────────────
 
     address public owner;
     address public scratchCardAddress;
-    uint256 public revealDelay = 3; // must match ScratchCard.revealDelay
+    uint256 public revealDelay = 3;
 
-    // tokenId => target reveal block on Unichain
     mapping(uint256 => uint256) public pendingRevealBlock;
-    // tokenId => buyer (for callback auth)
     mapping(uint256 => address) public pendingBuyer;
 
     bool private _subscribed;
 
-    // ─── Events ───────────────────────────────────────────────────────────────
+    // Detect whether we are running inside the Reactive VM (RVM) or on the real chain.
+    // The RVM has no code at the system contract address; the real chain does.
+    bool private immutable _isVM;
 
-    /// @notice Emitting this event tells Reactive Network to make a cross-chain callback.
-    /// @param chainId     Destination chain (Unichain Sepolia = 1301)
-    /// @param contractAddress  Target contract on the destination chain
-    /// @param payload     ABI-encoded calldata to forward
-    event Callback(uint256 indexed chainId, address indexed contractAddress, bytes payload);
+    // ─── Events ───────────────────────────────────────────────────────────────
 
     event RevealQueued(uint256 indexed tokenId, uint256 targetBlock);
     event RevealDispatched(uint256 indexed tokenId);
@@ -84,12 +102,12 @@ contract ReactiveReveal {
         _;
     }
 
-    /// @dev In production Reactive calls react() via the system contract.
-    ///      In tests / manual mode it can be called directly by the owner.
-    modifier onlyReactiveOrOwner() {
+    // Only the Reactive VM (system contract) can call react() in production.
+    // Owner can call it directly for testing / manual fallback.
+    modifier onlyVMOrOwner() {
         require(
             msg.sender == REACTIVE_SYSTEM_CONTRACT || msg.sender == owner,
-            "Only Reactive or owner"
+            "Only VM or owner"
         );
         _;
     }
@@ -99,35 +117,26 @@ contract ReactiveReveal {
     constructor(address _scratchCard) {
         owner              = msg.sender;
         scratchCardAddress = _scratchCard;
+
+        // Detect VM environment
+        uint256 size;
+        assembly { size := extcodesize(REACTIVE_SYSTEM_CONTRACT) }
+        _isVM = (size == 0);
     }
 
-    // ─── Reactive callback ────────────────────────────────────────────────────
+    // ─── IReactive: react() ───────────────────────────────────────────────────
 
-    /// @notice Called by Reactive Network when a subscribed event fires on Unichain.
-    /// @param chainId        Source chain (1301 = Unichain Sepolia)
-    /// @param _contract      Source contract address (our ScratchCard)
-    /// @param topic0         Event signature hash
-    /// @param topic1         Indexed param 1: buyer address (padded to uint256)
-    /// @param topic2         Indexed param 2: tokenId
-    /// @param topic3         Indexed param 3: purchaseBlock
-    /// @param data           Non-indexed event data (empty for CardPurchased)
-    function react(
-        uint256 chainId,
-        address _contract,
-        uint256 topic0,
-        uint256 topic1,
-        uint256 topic2,
-        uint256 topic3,
-        bytes   calldata data
-    ) external onlyReactiveOrOwner {
-        // Validate this is the event we care about
-        if (chainId != UNICHAIN_SEPOLIA_CHAIN_ID) return;
-        if (_contract != scratchCardAddress) return;
-        if (topic0 != CARD_PURCHASED_TOPIC0) return;
+    /// @notice Called by the Reactive VM when a subscribed event fires on Unichain.
+    function react(LogRecord calldata log) external onlyVMOrOwner {
+        // Filter: only handle our specific event from our specific contract on Unichain
+        if (log.chain_id != UNICHAIN_SEPOLIA_CHAIN_ID) return;
+        if (log._contract != scratchCardAddress)       return;
+        if (log.topic_0   != CARD_PURCHASED_TOPIC0)    return;
 
-        uint256 tokenId       = topic2;
-        uint256 purchaseBlock = topic3;
-        address buyer         = address(uint160(topic1));
+        // CardPurchased(address indexed buyer, uint256 indexed tokenId, uint256 indexed purchaseBlock)
+        uint256 tokenId       = log.topic_2;
+        uint256 purchaseBlock = log.topic_3;
+        address buyer         = address(uint160(log.topic_1));
 
         uint256 targetBlock = purchaseBlock + revealDelay;
         pendingRevealBlock[tokenId] = targetBlock;
@@ -135,17 +144,15 @@ contract ReactiveReveal {
 
         emit RevealQueued(tokenId, targetBlock);
 
-        // Immediately emit a Callback. Reactive Network will hold it until
-        // the target block is reached on Unichain, then forward it.
+        // Emit Callback — Reactive Network delivers this to ScratchCard on Unichain
+        // after targetBlock is reached.
         bytes memory payload = abi.encodeWithSignature("revealCard(uint256)", tokenId);
-        emit Callback(UNICHAIN_SEPOLIA_CHAIN_ID, scratchCardAddress, payload);
+        emit Callback(UNICHAIN_SEPOLIA_CHAIN_ID, scratchCardAddress, CALLBACK_GAS_LIMIT, payload);
         emit RevealDispatched(tokenId);
     }
 
     // ─── Subscription management ──────────────────────────────────────────────
 
-    /// @notice Subscribe to CardPurchased events from ScratchCard on Unichain.
-    /// Call this once after deploying.
     function subscribe() external onlyOwner {
         require(!_subscribed, "Already subscribed");
         _subscribed = true;
@@ -173,13 +180,13 @@ contract ReactiveReveal {
 
     // ─── Manual fallback ──────────────────────────────────────────────────────
 
-    /// @notice Owner can manually dispatch a reveal callback if Reactive fails.
+    /// @notice Owner manually fires a reveal callback if Reactive is delayed.
     function manualDispatch(uint256 tokenId) external onlyOwner {
         require(pendingRevealBlock[tokenId] > 0, "No pending reveal");
         delete pendingRevealBlock[tokenId];
         delete pendingBuyer[tokenId];
         bytes memory payload = abi.encodeWithSignature("revealCard(uint256)", tokenId);
-        emit Callback(UNICHAIN_SEPOLIA_CHAIN_ID, scratchCardAddress, payload);
+        emit Callback(UNICHAIN_SEPOLIA_CHAIN_ID, scratchCardAddress, CALLBACK_GAS_LIMIT, payload);
         emit RevealDispatched(tokenId);
     }
 
@@ -197,6 +204,5 @@ contract ReactiveReveal {
         owner = newOwner;
     }
 
-    // Accept ETH for Reactive gas fees
     receive() external payable {}
 }

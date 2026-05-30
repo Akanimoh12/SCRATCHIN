@@ -7,9 +7,16 @@ import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.so
 import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice Holds the SCRATCHIN' jackpot and small-win reserve in USDC.
-/// - ScratchCard sends USDC here on every card purchase (90% jackpot, 10% reserve).
-/// - ScratchHook sends USDC fee diversions here.
-/// - ScratchCard calls paySmallWin / payJackpot on reveal.
+///
+/// Split model:
+///   - Card purchases → 100% to reserve (small wins + full refunds always covered).
+///   - V4 hook swap fees → 100% to jackpot (jackpot grows with every swap).
+///   - Owner seed → jackpot (initial seeding).
+///
+/// This ensures:
+///   - Every expired card can always be refunded in full from reserve.
+///   - Small wins (0.25 USDC) are always covered as long as reserve > 0.
+///   - Jackpot is never touched by refunds.
 contract PrizePool is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -21,8 +28,9 @@ contract PrizePool is Ownable, ReentrancyGuard {
     uint256 public jackpot;
     uint256 public reserve;
 
-    // 10% of each card purchase goes to reserve for small wins
-    uint256 public constant RESERVE_BPS = 1000;
+    // 100% of card purchases go to reserve — guarantees full refunds and small wins.
+    // Jackpot is funded exclusively by V4 hook fees and owner seed().
+    uint256 public constant RESERVE_BPS = 10000;
 
     event Deposited(address indexed from, uint256 jackpotAmount, uint256 reserveAmount);
     event FeeDeposited(uint256 amount);
@@ -59,10 +67,10 @@ contract PrizePool is Ownable, ReentrancyGuard {
     // ─── Deposits ─────────────────────────────────────────────────────────────
 
     /// @notice Called by ScratchCard after transferring USDC to this contract.
-    /// Splits the amount into jackpot (90%) and reserve (10%).
+    /// 100% goes to reserve — guarantees refunds and small wins are always covered.
     function recordDeposit(uint256 amount) external onlyScratchCard {
         uint256 toReserve = (amount * RESERVE_BPS) / 10000;
-        uint256 toJackpot = amount - toReserve;
+        uint256 toJackpot = amount - toReserve; // 0 when RESERVE_BPS = 10000
         reserve += toReserve;
         jackpot += toJackpot;
         emit Deposited(msg.sender, toJackpot, toReserve);

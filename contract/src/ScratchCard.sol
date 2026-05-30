@@ -256,17 +256,17 @@ contract ScratchCard is ERC721, Ownable, ReentrancyGuard {
         card.state = CardState.Refunded;
         _burn(tokenId);
 
-        // Refund from reserve; if reserve is short, take from jackpot
+        // Refund exactly card.pricePaid from reserve.
+        // Reserve should always cover this (10% of every deposit builds it up),
+        // but if somehow reserve is short, refund whatever is available — never touch the jackpot.
         uint256 refundAmt = card.pricePaid;
         uint256 avail = prizePool.reserve();
-        if (avail >= refundAmt) {
-            prizePool.paySmallWin(currentOwner, refundAmt); // reuses reserve payout path
-        } else {
-            // Partial or jackpot-backed refund — only possible if reserve is drained
-            prizePool.payJackpot(currentOwner); // returns what's available
+        uint256 payout = avail >= refundAmt ? refundAmt : avail;
+        if (payout > 0) {
+            prizePool.paySmallWin(currentOwner, payout);
         }
 
-        emit CardRefunded(tokenId, currentOwner, refundAmt);
+        emit CardRefunded(tokenId, currentOwner, payout);
     }
 
     // ─── Views ────────────────────────────────────────────────────────────────
