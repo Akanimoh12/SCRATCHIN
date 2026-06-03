@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+:root {
+  --background: #08080F;
+  --foreground: #ffffff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: #08080F;
+  color: #ffffff;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ── FIRE FONT ──────────────────────────────────────────────── */
+/* Bangers with wide tracking — bold condensed game style */
+.font-fire {
+  font-family: var(--font-fire), Impact, Arial Black, sans-serif;
+  letter-spacing: 0.08em;
+  font-weight: 400;
+}
+
+/* No glow — plain crisp text */
+.text-fire {
+  text-shadow: none;
+}
+
+.text-fire-sm {
+  text-shadow: none;
+}
+
+/* Fire gradient — orange core fading to pink to purple */
+.text-gradient-fire {
+  background: linear-gradient(
+    160deg,
+    #FFD700 0%,
+    #FF6B00 20%,
+    #FF007A 55%,
+    #FC72FF 80%,
+    #7B3FE4 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
