@@ -78,9 +78,10 @@ contract DeployScript is Script {
         console.log("");
         console.log("Next steps:");
         console.log("  1. Set SCRATCH_CARD_ADDRESS=", address(scratchCard), "in .env");
-        console.log("  2. Deploy ReactiveReveal on Lasna (chain 5318007):");
+        console.log("  2. Deploy ReactiveReveal on Lasna (chain 5318007) -- it subscribes in its constructor:");
         console.log("     forge script script/DeployReactive.s.sol --rpc-url reactive_lasna --broadcast");
-        console.log("  3. Call ReactiveReveal.subscribe() to start auto-reveal");
+        console.log("  3. Authorize the Callback Proxy as revealer (auto-reveal):");
+        console.log("     cast send <SCRATCH_CARD> 'setReactiveRevealer(address)' 0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4");
         console.log("  4. Update frontend .env.local with contract addresses");
     }
 }

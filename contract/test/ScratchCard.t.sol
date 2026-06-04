@@ -247,8 +247,10 @@ contract ScratchCardTest is Test {
     function test_RevealByReactive() public {
         uint256 tokenId = _buyCard(alice, address(0));
         vm.roll(block.number + 4);
+        // Reactive path goes through the dedicated callback entry point, called by
+        // the authorized revealer (the Reactive Callback Proxy in production).
         vm.prank(reactive);
-        scratchCard.revealCard(tokenId);
+        scratchCard.revealCardCallback(address(0xBEEF), tokenId);
         ScratchCard.Card memory card = scratchCard.getCard(tokenId);
         assertEq(uint8(card.state), uint8(ScratchCard.CardState.Scratched));
     }
@@ -731,14 +733,10 @@ contract ScratchCardTest is Test {
 
     function test_ReactiveRevealSetScratchCard() public {
         ReactiveReveal rsc = new ReactiveReveal(address(scratchCard));
+        // In the test env the system contract has no code, so the RSC runs as a
+        // ReactVM instance (vm == true) and setScratchCard's rnOnly guard blocks it.
+        vm.expectRevert("Reactive Network only");
         rsc.setScratchCard(bob);
-        assertEq(rsc.scratchCardAddress(), bob);
-    }
-
-    function test_ReactiveRevealSetRevealDelay() public {
-        ReactiveReveal rsc = new ReactiveReveal(address(scratchCard));
-        rsc.setRevealDelay(5);
-        assertEq(rsc.revealDelay(), 5);
     }
 
     function test_ReactiveRevealTransferOwnership() public {
@@ -779,72 +777,97 @@ contract ScratchCardTest is Test {
         });
     }
 
-    /// @dev react() called by owner (simulates Reactive VM) queues a reveal
+    // The Reactive system contract address that AbstractReactive authorizes as the
+    // sole caller of react(). We prank as this address to simulate the ReactVM.
+    address constant REACTIVE_SYSTEM = 0x0000000000000000000000000000000000fffFfF;
+    uint256 constant CARD_PURCHASED_TOPIC0 =
+        uint256(keccak256("CardPurchased(address,uint256,uint256)"));
+
+    /// @dev react() (running as a ReactVM instance, vm==true in tests) emits a Callback
+    ///      targeting revealCardCallback(address,uint256) with the correct token id.
     function test_ReactiveRevealReact() public {
         ReactiveReveal rsc = new ReactiveReveal(address(scratchCard));
 
-        uint256 tokenId       = 42;
-        uint256 purchaseBlock = 100;
-        address buyer         = alice;
+        uint256 tokenId = 42;
+        address buyer   = alice;
 
-        vm.expectEmit(true, false, false, true);
-        emit ReactiveReveal.RevealQueued(tokenId, purchaseBlock + rsc.revealDelay());
+        bytes memory expectedPayload =
+            abi.encodeWithSignature("revealCardCallback(address,uint256)", address(0), tokenId);
 
-        rsc.react(_makeLog(1301, address(scratchCard), rsc.CARD_PURCHASED_TOPIC0(),
-            uint256(uint160(buyer)), tokenId, purchaseBlock));
+        // Callback(chain_id, _contract, gas_limit, payload) — check all fields.
+        vm.expectEmit(true, true, true, true);
+        emit IReactive.Callback(1301, address(scratchCard), 200_000, expectedPayload);
 
-        assertEq(rsc.pendingRevealBlock(tokenId), purchaseBlock + rsc.revealDelay());
-        assertEq(rsc.pendingBuyer(tokenId), buyer);
+        rsc.react(_makeLog(1301, address(scratchCard), CARD_PURCHASED_TOPIC0,
+            uint256(uint160(buyer)), tokenId, 100));
     }
 
-    /// @dev react() ignores events from wrong chain
+    /// @dev react() is vmOnly: when the system contract is present (vm==false, i.e. the
+    ///      Reactive Network instance, not a ReactVM), react() reverts.
+    function test_ReactiveRevealReactNotVmReverts() public {
+        // Put code at the system address so the *next* RSC detects vm == false.
+        vm.etch(REACTIVE_SYSTEM, hex"6001"); // any non-empty bytecode
+        ReactiveReveal rsc = new ReactiveReveal(address(scratchCard));
+        vm.expectRevert("VM only");
+        rsc.react(_makeLog(1301, address(scratchCard), CARD_PURCHASED_TOPIC0,
+            uint256(uint160(alice)), 1, 100));
+    }
+
+    /// @dev react() ignores events from the wrong chain (no Callback emitted, no revert).
     function test_ReactiveRevealIgnoresWrongChain() public {
         ReactiveReveal rsc = new ReactiveReveal(address(scratchCard));
-        rsc.react(_makeLog(999, address(scratchCard), rsc.CARD_PURCHASED_TOPIC0(),
+        vm.recordLogs();
+        rsc.react(_makeLog(999, address(scratchCard), CARD_PURCHASED_TOPIC0,
             uint256(uint160(alice)), 1, 100));
-        assertEq(rsc.pendingRevealBlock(1), 0);
+        assertEq(vm.getRecordedLogs().length, 0);
     }
 
-    /// @dev react() ignores events from wrong contract
+    /// @dev react() ignores events from the wrong contract.
     function test_ReactiveRevealIgnoresWrongContract() public {
         ReactiveReveal rsc = new ReactiveReveal(address(scratchCard));
-        rsc.react(_makeLog(1301, address(0xdead), rsc.CARD_PURCHASED_TOPIC0(),
+        vm.recordLogs();
+        rsc.react(_makeLog(1301, address(0xdead), CARD_PURCHASED_TOPIC0,
             uint256(uint160(alice)), 1, 100));
-        assertEq(rsc.pendingRevealBlock(1), 0);
+        assertEq(vm.getRecordedLogs().length, 0);
     }
 
-    /// @dev react() ignores wrong event signature
+    /// @dev react() ignores the wrong event signature.
     function test_ReactiveRevealIgnoresWrongTopic0() public {
         ReactiveReveal rsc = new ReactiveReveal(address(scratchCard));
+        vm.recordLogs();
         rsc.react(_makeLog(1301, address(scratchCard), 0xdeadbeef,
             uint256(uint160(alice)), 1, 100));
-        assertEq(rsc.pendingRevealBlock(1), 0);
+        assertEq(vm.getRecordedLogs().length, 0);
     }
 
-    /// @dev manualDispatch clears pending and emits Callback
-    function test_ReactiveRevealManualDispatch() public {
-        ReactiveReveal rsc = new ReactiveReveal(address(scratchCard));
-        rsc.react(_makeLog(1301, address(scratchCard), rsc.CARD_PURCHASED_TOPIC0(),
-            uint256(uint160(alice)), 7, 100));
-
-        vm.expectEmit(true, false, false, false);
-        emit ReactiveReveal.RevealDispatched(7);
-        rsc.manualDispatch(7);
-
-        assertEq(rsc.pendingRevealBlock(7), 0);
-    }
-
-    function test_ReactiveRevealManualDispatchNoPendingReverts() public {
-        ReactiveReveal rsc = new ReactiveReveal(address(scratchCard));
-        vm.expectRevert("No pending reveal");
-        rsc.manualDispatch(99);
-    }
-
+    /// @dev The RSC accepts REACT/native funding for callback debt settlement.
     function test_ReactiveRevealReceivesEth() public {
         ReactiveReveal rsc = new ReactiveReveal(address(scratchCard));
         vm.deal(address(this), 1 ether);
         (bool ok,) = address(rsc).call{value: 0.1 ether}("");
         assertTrue(ok);
         assertEq(address(rsc).balance, 0.1 ether);
+    }
+
+    /// @dev The Reactive callback path on ScratchCard reveals when called by the revealer.
+    function test_RevealCardCallbackByRevealer() public {
+        // `reactive` is set as the revealer in setUp via setReactiveRevealer.
+        uint256 tokenId = _buyCard(alice, address(0));
+        vm.roll(block.number + 4);
+
+        vm.prank(reactive);
+        scratchCard.revealCardCallback(address(0xBEEF), tokenId);
+
+        ScratchCard.Card memory card = scratchCard.getCard(tokenId);
+        assertEq(uint8(card.state), uint8(ScratchCard.CardState.Scratched));
+    }
+
+    /// @dev Non-revealer cannot call the callback entry point.
+    function test_RevealCardCallbackUnauthorizedReverts() public {
+        uint256 tokenId = _buyCard(alice, address(0));
+        vm.roll(block.number + 4);
+        vm.prank(bob);
+        vm.expectRevert(ScratchCard.Unauthorized.selector);
+        scratchCard.revealCardCallback(address(0xBEEF), tokenId);
     }
 }

@@ -194,14 +194,34 @@ contract ScratchCard is ERC721, Ownable, ReentrancyGuard {
 
     // ─── Reveal ───────────────────────────────────────────────────────────────
 
-    /// @notice Reveal a card. Callable by the current NFT owner or Reactive revealer.
+    /// @notice Reveal a card. Callable directly by the current NFT owner.
     function revealCard(uint256 tokenId) external nonReentrant {
+        _reveal(tokenId, msg.sender);
+    }
+
+    /// @notice Reactive Network callback entry point.
+    /// @dev The Reactive Callback Proxy executes this and injects `rvm_id` as the
+    ///      first argument. Authorization is on `msg.sender` (the proxy address),
+    ///      which must equal `reactiveRevealer`. The `rvm_id` arg is unused here
+    ///      but is part of the mandatory Reactive callback signature.
+    function revealCardCallback(address /* rvm_id */, uint256 tokenId) external nonReentrant {
+        if (msg.sender != reactiveRevealer) revert Unauthorized();
+        // The reactive revealer is pre-authorized; pass it through as the caller so
+        // the shared authorization check below succeeds for the callback path.
+        _reveal(tokenId, reactiveRevealer);
+    }
+
+    /// @notice Shared reveal logic for both the owner path and the Reactive callback.
+    /// @param caller The authenticated msg.sender of the entry point (owner or revealer).
+    function _reveal(uint256 tokenId, address caller) internal {
         Card storage card = cards[tokenId];
+        // State checks first so refunded/scratched cards return a clear error even
+        // though the NFT may have been burned (which would make ownerOf revert).
         if (card.state == CardState.Scratched) revert AlreadyScratched();
         if (card.state == CardState.Refunded)  revert NotRefundable();
 
         address currentOwner = ownerOf(tokenId); // authoritative ERC-721 owner
-        if (msg.sender != currentOwner && msg.sender != reactiveRevealer) revert Unauthorized();
+        if (caller != currentOwner && caller != reactiveRevealer) revert Unauthorized();
         if (block.number < card.purchaseBlock + revealDelay) revert NotScratchable();
 
         uint256 targetBlock = card.purchaseBlock + revealDelay;
