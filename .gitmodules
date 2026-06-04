@@ -1,0 +1,3 @@
+[submodule "contract/lib/reactive-lib"]
+	path = contract/lib/reactive-lib
+	url = https://github.com/Reactive-Network/reactive-lib

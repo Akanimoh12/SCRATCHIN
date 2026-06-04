@@ -7,54 +7,58 @@ import {ReactiveReveal} from "../src/ReactiveReveal.sol";
 /// @notice Deploy ReactiveReveal RSC on Reactive Lasna testnet (chain 5318007).
 ///
 /// Prerequisites:
-///   - PRIVATE_KEY in .env
-///   - REACTIVE_LASNA_RPC=https://lasna-rpc.rnk.dev in .env
-///   - SCRATCH_CARD_ADDRESS in .env (set after Deploy.s.sol)
+///   - PRIVATE_KEY in .env  (deployer holds REACT on Lasna)
+///   - SCRATCH_CARD_ADDRESS in .env (the ScratchCard on Unichain Sepolia)
 ///
 /// Run:
 ///   forge script script/DeployReactive.s.sol \
 ///     --rpc-url "https://lasna-rpc.rnk.dev" \
-///     --broadcast \
-///     -vvvv
+///     --broadcast -vvvv
+///
+/// IMPORTANT — what changed and why it now fires:
+///   * Subscription is created inside the RSC constructor (reactive-lib model), so the
+///     ReactVM actually starts watching CardPurchased. No manual subscribe() tx.
+///   * We send REACT to the RSC so it can settle callback/subscription debt on Lasna.
+///   * The callback targets revealCardCallback(address,uint256) on Unichain, executed by
+///     the Reactive Callback Proxy. You MUST authorize that proxy on the destination:
+///         cast send <SCRATCH_CARD> "setReactiveRevealer(address)" <CALLBACK_PROXY_ADDR>
+///     (the proxy address, NOT this RSC's Lasna address).
 contract DeployReactiveScript is Script {
-    // How much ETH to send to the RSC for Reactive callback gas.
-    // 0.5 ETH is enough for many thousands of auto-reveals on Lasna.
-    uint256 constant RSC_ETH_FUND = 0.5 ether;
+    // REACT funding for the RSC to cover subscription + callback debt on Lasna.
+    uint256 constant RSC_REACT_FUND = 0.5 ether;
 
     function run() external {
-        uint256 deployerKey     = vm.envUint("PRIVATE_KEY");
-        address deployer        = vm.addr(deployerKey);
+        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
+        address deployer = vm.addr(deployerKey);
         address scratchCardAddr = vm.envAddress("SCRATCH_CARD_ADDRESS");
 
-        console.log("Deployer       :", deployer);
-        console.log("ScratchCard    :", scratchCardAddr);
-        console.log("Funding RSC with:", RSC_ETH_FUND, "wei");
+        console.log("Deployer    :", deployer);
+        console.log("ScratchCard :", scratchCardAddr);
 
         vm.startBroadcast(deployerKey);
 
-        // 1. Deploy RSC
+        // Deploy RSC — the constructor subscribes to CardPurchased on Unichain.
         ReactiveReveal rsc = new ReactiveReveal(scratchCardAddr);
-        console.log("ReactiveReveal :", address(rsc));
+        console.log("ReactiveReveal:", address(rsc));
 
-        // 2. Fund RSC with ETH so Reactive Network can pay for callback gas
-        (bool ok,) = address(rsc).call{value: RSC_ETH_FUND}("");
-        require(ok, "ETH funding failed");
-        console.log("Funded RSC with 0.5 ETH for Reactive gas");
-
-        // 3. Subscribe to CardPurchased events from ScratchCard on Unichain
-        rsc.subscribe();
-        console.log("Subscribed to CardPurchased events");
+        // Fund the RSC with REACT so it can cover callback/subscription debt.
+        (bool ok,) = address(rsc).call{value: RSC_REACT_FUND}("");
+        require(ok, "REACT funding failed");
+        console.log("Funded RSC with 0.5 REACT");
 
         vm.stopBroadcast();
 
         console.log("=== Reactive Deployment Complete ===");
-        console.log("Chain          : Reactive Lasna (5318007)");
-        console.log("RSC addr       :", address(rsc));
-        console.log("Watching       : CardPurchased on", scratchCardAddr);
+        console.log("Chain   : Reactive Lasna (5318007)");
+        console.log("RSC addr:", address(rsc));
+        console.log("Watching: CardPurchased on", scratchCardAddr);
         console.log("");
-        console.log("Next steps:");
-        console.log("  1. Set SCRATCH_CARD_ADDRESS (Unichain) to allow RSC as revealer:");
-        console.log("     cast send <SCRATCH_CARD> setReactiveRevealer(address) <RSC_ADDR>");
-        console.log("  2. Update frontend: NEXT_PUBLIC_REACTIVE_RSC_ADDRESS=", address(rsc));
+        console.log("NEXT STEPS (on Unichain Sepolia):");
+        console.log("  Unichain Sepolia Callback Proxy: 0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4");
+        console.log("  1. Authorize the proxy as the revealer:");
+        console.log("       cast send <SCRATCH_CARD> 'setReactiveRevealer(address)' \\");
+        console.log("         0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4");
+        console.log("  2. Fund the proxy so it pays reveal gas on Unichain (depositTo, per docs).");
+        console.log("  3. Update frontend: NEXT_PUBLIC_REACTIVE_RSC_ADDRESS=", address(rsc));
     }
 }

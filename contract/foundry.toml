@@ -10,7 +10,8 @@ remappings = [
   "@openzeppelin/=lib/openzeppelin-contracts/",
   "v4-core/=lib/v4-core/",
   "v4-periphery/=lib/v4-periphery/",
-  "forge-std/=lib/forge-std/src/"
+  "forge-std/=lib/forge-std/src/",
+  "reactive-lib/=lib/reactive-lib/src/"
 ]
 
 [rpc_endpoints]

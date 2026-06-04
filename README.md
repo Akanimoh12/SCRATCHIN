@@ -28,16 +28,17 @@ SCRATCHIN' is a fully on-chain scratch card lottery game on **Unichain Sepolia**
 
 | Contract | Address | Explorer |
 |---|---|---|
-| ScratchCard (ERC-721) | `0xb46E26573314Fc1b0c7a237eFcFfeB25940cB550` | [View ↗](https://unichain-sepolia.blockscout.com/address/0xb46E26573314Fc1b0c7a237eFcFfeB25940cB550) |
-| PrizePool | `0xfcB02b04d0f002d106dDb73817ef64B80BfBc661` | [View ↗](https://unichain-sepolia.blockscout.com/address/0xfcB02b04d0f002d106dDb73817ef64B80BfBc661) |
-| Referral | `0xA7B1DD6258c4AB3735f649189779D29bbC074596` | [View ↗](https://unichain-sepolia.blockscout.com/address/0xA7B1DD6258c4AB3735f649189779D29bbC074596) |
+| ScratchCard (ERC-721) | `0x5a441033B0D6BF8B1fbE3D688145Daf9d7c9a220` | [View ↗](https://unichain-sepolia.blockscout.com/address/0x5a441033B0D6BF8B1fbE3D688145Daf9d7c9a220) |
+| PrizePool | `0xDaDd0d327725B7D2902eF2461fCab1c563176894` | [View ↗](https://unichain-sepolia.blockscout.com/address/0xDaDd0d327725B7D2902eF2461fCab1c563176894) |
+| Referral | `0xE5eb8037AC9871Ceb569C75385D21a749ba8e16C` | [View ↗](https://unichain-sepolia.blockscout.com/address/0xE5eb8037AC9871Ceb569C75385D21a749ba8e16C) |
 | USDC (token) | `0x31d0220469e10c4E71834a79b1f276d740d3768F` | [View ↗](https://unichain-sepolia.blockscout.com/address/0x31d0220469e10c4E71834a79b1f276d740d3768F) |
+| Reactive Callback Proxy | `0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4` | [View ↗](https://unichain-sepolia.blockscout.com/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4) |
 
 ### Reactive Lasna Testnet (Chain ID: 5318007)
 
 | Contract | Address | Explorer |
 |---|---|---|
-| ReactiveReveal RSC | `0xc993f01c962fd61a588bb00efb5cc373764c4add` | [View ↗](https://lasna.reactscan.net/address/0xc993f01c962fd61a588bb00efb5cc373764c4add) |
+| ReactiveReveal RSC | `0x6A9fe6D9DBd4cbc6075f75C0fC06A1E3EF23C729` | [View ↗](https://lasna.reactscan.net/address/0x6A9fe6D9DBd4cbc6075f75C0fC06A1E3EF23C729) |
 
 > **ScratchHook** (Uniswap V4 `afterSwap`) requires CREATE2 address mining for V4 hook flags. It is deployed separately and optional for testnet — the prize pool can be seeded manually via `PrizePool.seed()`.
 
