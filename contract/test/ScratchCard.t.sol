@@ -290,16 +290,16 @@ contract ScratchCardTest is Test {
         assertTrue(card.symbols[2] < 5);
     }
 
-    /// @dev blockhash unavailable after 256 blocks (but card expires at 250, so
-    ///      test the BlockHashUnavailable path by manipulating vm state)
-    function test_BlockHashUnavailableReverts() public {
+    /// @dev Entropy is captured at purchase, so a reveal still works long after the
+    ///      256-block blockhash window — the previous failure mode for slow Reactive
+    ///      callbacks. This is the regression test for that fix.
+    function test_RevealWorksLongAfterPurchase() public {
         uint256 tokenId = _buyCard(alice, address(0));
-        // Roll past 256 blocks from the target block (purchaseBlock + revealDelay)
-        // purchaseBlock ≈ current block; target = purchaseBlock + 3; unavailable after target + 256
-        vm.roll(block.number + 270); // way past 256 from target, blockhash returns 0
+        vm.roll(block.number + 1000); // far past the 256-block blockhash window
         vm.prank(alice);
-        vm.expectRevert(ScratchCard.BlockHashUnavailable.selector);
-        scratchCard.revealCard(tokenId);
+        scratchCard.revealCard(tokenId); // must NOT revert
+        ScratchCard.Card memory card = scratchCard.getCard(tokenId);
+        assertEq(uint8(card.state), uint8(ScratchCard.CardState.Scratched));
     }
 
     // ─── Prizes ───────────────────────────────────────────────────────────────
@@ -322,9 +322,9 @@ contract ScratchCardTest is Test {
     }
 
     function test_JackpotPaidOut() public {
-        // Buy the card at a known block, then brute-force the reveal block until
-        // the blockhash seed produces a 3-of-3 match. We need block.number > targetBlock
-        // for blockhash to be non-zero, so roll to targetBlock+1 before computing.
+        // Brute-force purchases until a card's captured-at-purchase entropy yields a
+        // 3-of-3 match (~1/25 per card), then assert the jackpot pays out.
+        usdc.mint(alice, 200 * CARD_PRICE); // fund enough cards for the search
         uint256 tokenId;
         bool jackpotFound = false;
 
@@ -332,20 +332,18 @@ contract ScratchCardTest is Test {
             vm.roll(block.number + 1);
             tokenId = _buyCard(alice, address(0));
             ScratchCard.Card memory c = scratchCard.getCard(tokenId);
-            uint256 targetBlock = c.purchaseBlock + 3;
 
-            // Roll one past target so blockhash(targetBlock) is available
-            vm.roll(targetBlock + 1);
-            bytes32 bhash = blockhash(targetBlock);
-            if (bhash == bytes32(0)) continue;
-
-            // Replicate the exact seed in ScratchCard.revealCard
-            // seed = keccak256(bhash, tokenId, mintedTo, block.number)
-            // block.number at reveal time will be targetBlock+1
-            bytes32 seed = keccak256(abi.encodePacked(bhash, tokenId, c.mintedTo, targetBlock + 1));
+            // Entropy is captured at purchase: seedHash = blockhash(purchaseBlock - 1).
+            // Replicate the exact seed in ScratchCard._reveal:
+            // seed = keccak256(seedHash, tokenId, mintedTo, purchaseBlock)
+            if (c.seedHash == bytes32(0)) continue;
+            bytes32 seed = keccak256(abi.encodePacked(c.seedHash, tokenId, c.mintedTo, c.purchaseBlock));
             uint8 s0 = uint8(uint8(seed[0]) % 5);
             uint8 s1 = uint8(uint8(seed[1]) % 5);
             uint8 s2 = uint8(uint8(seed[2]) % 5);
+
+            // Roll past revealDelay so the reveal is allowed.
+            vm.roll(c.purchaseBlock + 4);
 
             if (s0 == s1 && s1 == s2) {
                 jackpotFound = true;

@@ -62,6 +62,7 @@ contract ScratchCard is ERC721, Ownable, ReentrancyGuard {
         CardState    state;
         uint8[3]     symbols;       // filled on reveal; 0 before
         uint256      prize;         // USDC won (filled on reveal)
+        bytes32      seedHash;      // entropy captured at purchase (blockhash of prior block)
     }
 
     // ─── State ────────────────────────────────────────────────────────────────
@@ -185,7 +186,12 @@ contract ScratchCard is ERC721, Ownable, ReentrancyGuard {
                 pricePaid:     cardPrice,
                 state:         CardState.Pending,
                 symbols:       [uint8(0), uint8(0), uint8(0)],
-                prize:         0
+                prize:         0,
+                // Capture entropy from the previous block's hash at purchase time.
+                // It is already finalized (so always available later, no 256-block
+                // race with the Reactive callback) yet unknown when the buyer
+                // submitted their tx, so it cannot be gamed.
+                seedHash:      blockhash(block.number - 1)
             });
             _tokensByOwner[msg.sender].push(tokenId);
             emit CardPurchased(msg.sender, tokenId, block.number);
@@ -224,13 +230,13 @@ contract ScratchCard is ERC721, Ownable, ReentrancyGuard {
         if (caller != currentOwner && caller != reactiveRevealer) revert Unauthorized();
         if (block.number < card.purchaseBlock + revealDelay) revert NotScratchable();
 
-        uint256 targetBlock = card.purchaseBlock + revealDelay;
-
-        // blockhash only available for last 256 blocks
-        bytes32 bhash = blockhash(targetBlock);
+        // Entropy was captured at purchase (card.seedHash), so the reveal works no
+        // matter how long the cross-chain Reactive callback takes — no 256-block
+        // blockhash window to race against.
+        bytes32 bhash = card.seedHash;
         if (bhash == bytes32(0)) revert BlockHashUnavailable();
 
-        bytes32 seed = keccak256(abi.encodePacked(bhash, tokenId, card.mintedTo, block.number));
+        bytes32 seed = keccak256(abi.encodePacked(bhash, tokenId, card.mintedTo, card.purchaseBlock));
 
         uint8 s0 = uint8(uint8(seed[0]) % 5);
         uint8 s1 = uint8(uint8(seed[1]) % 5);

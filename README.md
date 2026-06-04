@@ -18,7 +18,7 @@
 
 ## What is SCRATCHIN'?
 
-SCRATCHIN' is a fully on-chain scratch card lottery game on **Unichain Sepolia**. Players buy scratch card NFTs with USDC, and block hash entropy reveals three symbols — match two for a small win, match three for the jackpot. Card reveals are triggered automatically by a **Reactive Network RSC** with no backend or manual interaction needed.
+SCRATCHIN' is a fully on-chain scratch card lottery game on **Unichain Sepolia**. Players buy scratch card NFTs with USDC; block-hash entropy captured at purchase reveals three symbols — match two for a small win, match three for the jackpot. Card reveals are triggered automatically by a **Reactive Network RSC** with no backend or manual interaction needed.
 
 ---
 
@@ -28,9 +28,9 @@ SCRATCHIN' is a fully on-chain scratch card lottery game on **Unichain Sepolia**
 
 | Contract | Address | Explorer |
 |---|---|---|
-| ScratchCard (ERC-721) | `0x5a441033B0D6BF8B1fbE3D688145Daf9d7c9a220` | [View ↗](https://unichain-sepolia.blockscout.com/address/0x5a441033B0D6BF8B1fbE3D688145Daf9d7c9a220) |
-| PrizePool | `0xDaDd0d327725B7D2902eF2461fCab1c563176894` | [View ↗](https://unichain-sepolia.blockscout.com/address/0xDaDd0d327725B7D2902eF2461fCab1c563176894) |
-| Referral | `0xE5eb8037AC9871Ceb569C75385D21a749ba8e16C` | [View ↗](https://unichain-sepolia.blockscout.com/address/0xE5eb8037AC9871Ceb569C75385D21a749ba8e16C) |
+| ScratchCard (ERC-721) | `0xd051dD659844CFe4e2093a357368c57fe7d0a3c4` | [View ↗](https://unichain-sepolia.blockscout.com/address/0xd051dD659844CFe4e2093a357368c57fe7d0a3c4) |
+| PrizePool | `0xd7F50EaAEf4CcC922816261C142E3e1581dB9f3c` | [View ↗](https://unichain-sepolia.blockscout.com/address/0xd7F50EaAEf4CcC922816261C142E3e1581dB9f3c) |
+| Referral | `0xB830f8634d10a5B4F8FE16d70D531034AE4cA668` | [View ↗](https://unichain-sepolia.blockscout.com/address/0xB830f8634d10a5B4F8FE16d70D531034AE4cA668) |
 | USDC (token) | `0x31d0220469e10c4E71834a79b1f276d740d3768F` | [View ↗](https://unichain-sepolia.blockscout.com/address/0x31d0220469e10c4E71834a79b1f276d740d3768F) |
 | Reactive Callback Proxy | `0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4` | [View ↗](https://unichain-sepolia.blockscout.com/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4) |
 
@@ -38,7 +38,7 @@ SCRATCHIN' is a fully on-chain scratch card lottery game on **Unichain Sepolia**
 
 | Contract | Address | Explorer |
 |---|---|---|
-| ReactiveReveal RSC | `0x6A9fe6D9DBd4cbc6075f75C0fC06A1E3EF23C729` | [View ↗](https://lasna.reactscan.net/address/0x6A9fe6D9DBd4cbc6075f75C0fC06A1E3EF23C729) |
+| ReactiveReveal RSC | `0x77ec0037Bf4928BeaC8Cb943D249b0045209C464` | [View ↗](https://lasna.reactscan.net/address/0x77ec0037Bf4928BeaC8Cb943D249b0045209C464) |
 
 > **ScratchHook** (Uniswap V4 `afterSwap`) requires CREATE2 address mining for V4 hook flags. It is deployed separately and optional for testnet — the prize pool can be seeded manually via `PrizePool.seed()`.
 
@@ -61,12 +61,12 @@ Player → buyCards(qty, referrer) → ScratchCard.sol (ERC-721 mint)
 Reactive Lasna (chain 5318007):
   ReactiveReveal.react(LogRecord) ← Reactive VM fires on CardPurchased event
          │
-         └── emit Callback(1301, scratchCard, 200k gas, revealCard(tokenId))
+         └── emit Callback(1301, scratchCard, 200k gas, revealCardCallback(rvm_id, tokenId))
                    │
                    ▼
-         ScratchCard.revealCard(tokenId) [on Unichain]
+         ScratchCard.revealCardCallback(rvm_id, tokenId) [on Unichain, via Callback Proxy]
               │
-              └── blockhash(purchaseBlock + 3) seeds 3 symbols
+              └── card.seedHash (captured at purchase) seeds 3 symbols
                    ├── 2-of-3 match → paySmallWin(0.25 USDC) from reserve
                    └── 3-of-3 match → payJackpot(full jackpot) to winner
 ```
@@ -115,7 +115,7 @@ The jackpot starts at the seeded amount (20 USDC in this deployment). Card purch
 | Smart Contracts | Solidity ^0.8.26 · Foundry · ERC-721 (OpenZeppelin) |
 | Swap Hook | Uniswap V4 `afterSwap` hook (fee diversion) |
 | Automation | Reactive Network RSC (chain 5318007) |
-| Randomness | On-chain block hash entropy |
+| Randomness | On-chain block hash entropy (captured at purchase) |
 | Frontend | Next.js 16 · TypeScript · Tailwind CSS v4 |
 | Wallet | wagmi v2 · viem · RainbowKit |
 | Animations | Framer Motion · canvas-confetti |
@@ -146,13 +146,18 @@ forge script script/Deploy.s.sol \
   --rpc-url unichain_sepolia \
   --broadcast -vvvv                 # deploy to Unichain Sepolia
 
-# After deploy — set SCRATCH_CARD_ADDRESS in .env, then:
-forge script script/DeployReactive.s.sol \
-  --rpc-url "https://lasna-rpc.rnk.dev" \
-  --broadcast -vvvv                 # deploy + fund + subscribe RSC
+# After deploy — set SCRATCH_CARD_ADDRESS in .env, then deploy the RSC on Lasna.
+# NOTE: use forge create, not forge script — the RSC constructor calls a Lasna node
+# precompile that foundry's local simulation can't run. (See docs/reactive-debug.md.)
+forge create src/ReactiveReveal.sol:ReactiveReveal \
+  --rpc-url "https://lasna-rpc.rnk.dev" --private-key $PRIVATE_KEY --broadcast \
+  --constructor-args $SCRATCH_CARD_ADDRESS    # subscribes in the constructor
+cast send <RSC_ADDRESS> --value 0.5ether \
+  --rpc-url "https://lasna-rpc.rnk.dev" --private-key $PRIVATE_KEY   # fund REACT
 
-# Wire ScratchCard to the new RSC
-cast send <SCRATCH_CARD_ADDRESS> "setReactiveRevealer(address)" <RSC_ADDRESS> \
+# Wire ScratchCard to the Reactive Callback Proxy (NOT the RSC address)
+cast send <SCRATCH_CARD_ADDRESS> "setReactiveRevealer(address)" \
+  0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4 \
   --rpc-url https://sepolia.unichain.org --private-key $PRIVATE_KEY
 ```
 

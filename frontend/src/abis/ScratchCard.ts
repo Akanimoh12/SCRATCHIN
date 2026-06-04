@@ -41,6 +41,7 @@ export const SCRATCH_CARD_ABI = [
           { name: "state",         type: "uint8" },   // 0=Pending, 1=Scratched, 2=Refunded
           { name: "symbols",       type: "uint8[3]" },
           { name: "prize",         type: "uint256" },
+          { name: "seedHash",      type: "bytes32" }, // entropy captured at purchase
         ],
       },
     ],

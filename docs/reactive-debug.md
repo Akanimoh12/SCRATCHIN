@@ -42,10 +42,10 @@ so cards are never auto-revealed. Nothing shows up on the Lasna explorer.
 
 | Contract | Chain | Address |
 |---|---|---|
-| ScratchCard | Unichain Sepolia | `0x5a441033B0D6BF8B1fbE3D688145Daf9d7c9a220` |
-| PrizePool | Unichain Sepolia | `0xDaDd0d327725B7D2902eF2461fCab1c563176894` |
-| Referral | Unichain Sepolia | `0xE5eb8037AC9871Ceb569C75385D21a749ba8e16C` |
-| ReactiveReveal RSC | Reactive Lasna | `0x6A9fe6D9DBd4cbc6075f75C0fC06A1E3EF23C729` |
+| ScratchCard | Unichain Sepolia | `0xd051dD659844CFe4e2093a357368c57fe7d0a3c4` |
+| PrizePool | Unichain Sepolia | `0xd7F50EaAEf4CcC922816261C142E3e1581dB9f3c` |
+| Referral | Unichain Sepolia | `0xB830f8634d10a5B4F8FE16d70D531034AE4cA668` |
+| ReactiveReveal RSC | Reactive Lasna | `0x77ec0037Bf4928BeaC8Cb943D249b0045209C464` |
 
 Wiring already done: RSC subscribed to `CardPurchased` in its constructor; RSC funded
 with 0.5 REACT; `ScratchCard.reactiveRevealer` set to the Callback Proxy; proxy funded
