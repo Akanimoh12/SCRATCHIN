@@ -35,7 +35,11 @@ contract ReactiveReveal is AbstractReactive {
     uint256 private constant UNICHAIN_SEPOLIA_CHAIN_ID = 1301;
 
     // Gas to forward for the reveal callback on Unichain. 200k is safe for reveal logic.
-    uint64 private constant CALLBACK_GAS_LIMIT = 200_000;
+    // A winning reveal does a USDC transfer + PrizePool payout + leaderboard writes,
+    // which measured ~258k gas; a jackpot reveal is heavier still. 200k caused the
+    // destination callback to run OUT OF GAS and revert (panic 0x11), leaving winning
+    // cards stuck Pending. 500k gives ample headroom for the worst-case jackpot path.
+    uint64 private constant CALLBACK_GAS_LIMIT = 500_000;
 
     // ─── State ────────────────────────────────────────────────────────────────
 
@@ -52,7 +56,13 @@ contract ReactiveReveal is AbstractReactive {
     ///      deployed to Reactive Lasna. `AbstractReactive` wires up `service` and
     ///      `vm` for us. On the real Reactive Network (vm == false) we register the
     ///      subscription; inside a ReactVM (vm == true) we skip it.
-    constructor(address _scratchCard) {
+    ///
+    ///      Constructor is `payable` so REACT can be sent WITH the deployment tx
+    ///      (matches the official reactive-lib demos). The subscription must be
+    ///      paid-for from birth or the ReactVM will not start delivering events —
+    ///      funding the contract in a separate tx after deploy can leave the
+    ///      subscription inactive.
+    constructor(address _scratchCard) payable {
         owner = msg.sender;
         scratchCardAddress = _scratchCard;
 
@@ -71,6 +81,19 @@ contract ReactiveReveal is AbstractReactive {
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
         _;
+    }
+
+    /// @notice Owner can (re-)arm the subscription without redeploying — useful if a
+    ///         subscription ever goes inactive. Reactive Network side only.
+    function subscribe() external onlyOwner rnOnly {
+        service.subscribe(
+            UNICHAIN_SEPOLIA_CHAIN_ID,
+            scratchCardAddress,
+            CARD_PURCHASED_TOPIC0,
+            REACTIVE_IGNORE,
+            REACTIVE_IGNORE,
+            REACTIVE_IGNORE
+        );
     }
 
     // ─── IReactive: react() ─────────────────────────────────────────────────────

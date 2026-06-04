@@ -12,7 +12,15 @@ so cards are never auto-revealed. Nothing shows up on the Lasna explorer.
 | 3 | `reactiveRevealer` on Unichain was set to the **RSC's Lasna address**. The destination call's `msg.sender` is the **Callback Proxy**. | The reveal would revert `Unauthorized`. |
 | 4 | Funded the **RSC with ETH** for "callback gas." Reactive pays destination gas from the **Callback Proxy** (debt/credit), not the RSC balance. | Funds unused; callbacks could stall on unpaid debt. |
 | 5 | `react()` guarded by a hand-rolled `onlyVMOrOwner`; `_isVM` was computed but never used. | Fragile / could reject legitimate VM calls. |
-| 6 | **`react()` must be gated with `vmOnly`, not `authorizedSenderOnly`.** | Inside the ReactVM the caller is the VM itself, *not* `SERVICE_ADDR`. An ACL (`authorizedSenderOnly`) check therefore reverts on every delivered event — the subscription looks healthy, the RSC is funded, but `react()` silently reverts and **no `Callback` is ever emitted**. This was the live failure: card stayed Pending forever. The official Reactive demos all use `vmOnly`. |
+| 6 | **`react()` must be gated with `vmOnly`, not `authorizedSenderOnly`.** | Inside the ReactVM the caller is the VM itself, *not* `SERVICE_ADDR`. An ACL (`authorizedSenderOnly`) check therefore reverts on every delivered event — the subscription looks healthy, the RSC is funded, but `react()` silently reverts and **no `Callback` is ever emitted**. The official Reactive demos all use `vmOnly`. |
+| 7 | **`CALLBACK_GAS_LIMIT` was 200k; a winning reveal needs ~258k.** | THE REAL FINAL BUG. react() fired, the Callback was emitted AND delivered to Unichain (reactscan showed "successfully delivered") — but the destination tx **failed with `panic: arithmetic underflow/overflow (0x11)` = out of gas**. A losing reveal is cheap (<200k) so those would have worked; a winning reveal does a USDC transfer + PrizePool payout + leaderboard writes (~258k) and ran out of gas at 200k → reverted → card stuck Pending. Diagnosed by `cast run`/`cast call --trace` on the failed destination tx. Fix: raise to 500k. |
+| 8 | **`forge create` constructor subscription needs REACT funded AT deploy.** | Use a `payable` constructor and `forge create --value 0.5ether` so the subscription is paid-for from birth. Funding in a separate tx after deploy can leave the subscription inactive. |
+
+## How to debug a callback that "delivered" but didn't take effect
+
+1. On reactscan, open the RVM tx → it shows the **Destination Transaction** hash on the origin chain. "Successfully delivered" only means the *proxy* tx was mined — the **inner call can still revert**.
+2. Inspect that destination tx: `cast receipt <txhash>` (look for `status 0 (failed)`) and `cast run <txhash>` for the revert reason.
+3. `panic 0x11` on a callback almost always means **out of gas** — raise `CALLBACK_GAS_LIMIT` to cover the heaviest destination path (measure with `cast call --trace <dest> <fn> --from <proxy>`).
 
 ## The fix (now in the repo)
 
@@ -45,7 +53,7 @@ so cards are never auto-revealed. Nothing shows up on the Lasna explorer.
 | ScratchCard | Unichain Sepolia | `0xd051dD659844CFe4e2093a357368c57fe7d0a3c4` |
 | PrizePool | Unichain Sepolia | `0xd7F50EaAEf4CcC922816261C142E3e1581dB9f3c` |
 | Referral | Unichain Sepolia | `0xB830f8634d10a5B4F8FE16d70D531034AE4cA668` |
-| ReactiveReveal RSC | Reactive Lasna | `0x77ec0037Bf4928BeaC8Cb943D249b0045209C464` |
+| ReactiveReveal RSC | Reactive Lasna | `0x20E8307cFe2C5CF7E434b5Cb2C92494fa4BAF01C` |
 
 Wiring already done: RSC subscribed to `CardPurchased` in its constructor; RSC funded
 with 0.5 REACT; `ScratchCard.reactiveRevealer` set to the Callback Proxy; proxy funded

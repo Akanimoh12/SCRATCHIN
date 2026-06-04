@@ -794,7 +794,7 @@ contract ScratchCardTest is Test {
 
         // Callback(chain_id, _contract, gas_limit, payload) — check all fields.
         vm.expectEmit(true, true, true, true);
-        emit IReactive.Callback(1301, address(scratchCard), 200_000, expectedPayload);
+        emit IReactive.Callback(1301, address(scratchCard), 500_000, expectedPayload);
 
         rsc.react(_makeLog(1301, address(scratchCard), CARD_PURCHASED_TOPIC0,
             uint256(uint160(buyer)), tokenId, 100));
