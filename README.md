@@ -12,6 +12,8 @@
 
 *Scratch. Win. Repeat. On-chain forever.*
 
+**[Live App](https://scratchin.vercel.app/) · [Demo Video](https://www.loom.com/share/b7e2adf6affa4211a3970577c83955fe) · [Pitch Deck](https://docs.google.com/presentation/d/1G30RoRdEJoBqUQpmLOVtdbf3QSDbEiuYtdn38ijJ_3U/edit?usp=sharing)**
+
 </div>
 
 ---
