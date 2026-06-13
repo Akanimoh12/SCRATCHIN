@@ -40,7 +40,7 @@ SCRATCHIN' is a fully on-chain scratch card lottery game on **Unichain Sepolia**
 
 | Contract | Address | Explorer |
 |---|---|---|
-| ReactiveReveal RSC | `0x20E8307cFe2C5CF7E434b5Cb2C92494fa4BAF01C` | [View ↗](https://lasna.reactscan.net/address/0x20E8307cFe2C5CF7E434b5Cb2C92494fa4BAF01C) |
+| ReactiveReveal RSC | `0x20E8307cFe2C5CF7E434b5Cb2C92494fa4BAF01C` | [View ↗](https://lasna.reactscan.net/address/0x9bcf302cfcb64406b557342c2715e85ac62a4693/contract/0x20e8307cfe2c5cf7e434b5cb2c92494fa4baf01c?screen=transactions) |
 
 > **ScratchHook** (Uniswap V4 `afterSwap`) requires CREATE2 address mining for V4 hook flags. It is deployed separately and optional for testnet — the prize pool can be seeded manually via `PrizePool.seed()`.
 
